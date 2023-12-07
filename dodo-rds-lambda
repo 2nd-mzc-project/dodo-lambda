@@ -1,0 +1,68 @@
+import os
+import json
+from datetime import datetime
+from urllib.parse import urlparse
+import http.client
+
+def lambda_handler(event, context):
+    process_event(event)
+
+def process_event(event):
+    print('Event:', json.dumps(event))
+    sns_message = json.loads(event['Records'][0]['Sns']['Message'])
+    print('SNS Message:', sns_message)
+    post_data = build_slack_message(sns_message)
+    post_slack(post_data, os.environ['webhook'])
+
+def build_slack_message(data):
+    print('DATA:', data)
+    event_source = data['Event Source']
+    event_time = data['Event Time']
+    source_id = data['Source ID']
+    event_message = data['Event Message']
+
+    return {
+        'attachments': [
+            {
+                'title': f'[{event_message}]',
+                'color': 'warning',
+                'fields': [
+                    {'title': '이벤트 소스', 'value': event_source},
+                    {'title': '이벤트 시간', 'value': to_yyyymmddhhmmss(event_time)},
+                    {'title': '소스 아이디', 'value': source_id},
+                    {'title': '메시지', 'value': event_message}
+                ]
+            }
+        ]
+    }
+
+def to_yyyymmddhhmmss(time_string):
+    if not time_string:
+        return ''
+    
+    # 주어진 형식의 타임스탬프 파싱
+    parsed_time = datetime.strptime(time_string, "%Y-%m-%d %H:%M:%S.%f")
+    
+    # KST로 변환
+    kst_time = parsed_time.strftime('%Y-%m-%d %H:%M:%S')
+    
+    return kst_time
+
+def post_slack(message, slack_url):
+    url_components = urlparse(slack_url)
+    options = {
+        'host': url_components.hostname,
+        'path': url_components.path,
+        'method': 'POST',
+        'headers': {'Content-Type': 'application/json'}
+    }
+    request(options, message)
+
+def request(options, data):
+    connection = http.client.HTTPSConnection(options['host'])
+    connection.request(options['method'], options['path'], json.dumps(data), options['headers'])
+    response = connection.getresponse()
+    print(response.read().decode())
+
+# Uncomment the line below if you want to test this script locally
+# lambda_handler({"Records": [{"Sns": {"Message": '{"Event Source": "Test", "Event Time": "2022-07-07 02:08:27.718", "Source ID": "123", "Event Message": "Test Message"}'}}]}, None)

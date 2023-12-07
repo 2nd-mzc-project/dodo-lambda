@@ -1,0 +1,46 @@
+import boto3
+
+def lambda_handler(event, context):
+    stop_instances(event, context)
+    
+    
+def stop_instances(event, context):
+    # Lambda 함수에 부여된 IAM 역할을 사용하여 AWS 서비스에 연결
+    ec2_client = boto3.client('ec2')
+    rds_client = boto3.client('rds')
+
+    dev_vpc_id = 'vpc-0a4bf96c84f79a360'
+
+    # dev VPC 내에서 실행 중인 EC2 인스턴스 중지
+    response = ec2_client.describe_instances(Filters=[
+        {'Name': 'vpc-id', 'Values': [dev_vpc_id]},
+        {'Name': 'instance-state-name', 'Values': ['running']}
+    ])
+
+    for reservation in response['Reservations']:
+        for instance in reservation['Instances']:
+            instance_id = instance['InstanceId']
+            ec2_client.stop_instances(InstanceIds=[instance_id])
+            print(f"dev VPC 내의 EC2 인스턴스 {instance_id}를 중지했습니다.")
+
+    # dev VPC 내에서 실행 중인 RDS MySQL DB 인스턴스 중지
+    
+    # 종료할 RDS MySQL DB 인스턴스의 필터링된 태그
+    tag_filters = [
+        {'Key': 'Team', 'Value': 'nalttyo'},
+        {'Key': 'Env', 'Value': 'Dev'}
+    ]
+
+    # RDS MySQL DB 인스턴스 가져오기
+    response = rds_client.describe_db_instances()
+
+    for db_instance in response['DBInstances']:
+        # 인스턴스의 태그 확인
+        tags = rds_client.list_tags_for_resource(ResourceName=db_instance['DBInstanceArn'])
+
+        # 태그 필터와 일치하는지 확인
+        if all(tag in tags['TagList'] for tag in tag_filters):
+            db_instance_id = db_instance['DBInstanceIdentifier']
+            # 중지하려는 RDS 인스턴스 식별 후 중지
+            rds_client.stop_db_instance(DBInstanceIdentifier=db_instance_id)
+            print(f"RDS MySQL DB 인스턴스 {db_instance_id}를 중지했습니다.")
